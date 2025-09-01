@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dashboard de Datos</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Tipografía (opcional) -->
+  <link href="https://fonts.googleapis.com/css?family=Roboto:400,700&display=swap" rel="stylesheet">
+  <!-- Tu CSS ahora vive en src/ -->
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+<div class="container">
+  <div class="sidebar">
+    <h2>Dashboard</h2>
+    <button class="nav-btn active" data-section="inicio">Inicio</button>
+    <button class="nav-btn" data-section="nulos">Valores Nulos</button>
+    <button class="nav-btn" data-section="estadisticas">Estadísticas</button>
+    <button class="nav-btn" data-section="otras">Otras Gráficas</button>
+  </div>
+
+  <div class="main-content">
+    <div id="section-inicio" class="chart-section">
+      <h1>Bienvenido</h1>
+      <p>Sube tu archivo CSV para analizarlo y visualizar gráficos en tiempo real.</p>
+
+      <form id="upload-form" enctype="multipart/form-data">
+        <input type="file" name="csv_file" accept=".csv" required>
+        <button type="submit">Cargar CSV</button>
+      </form>
+      <div id="upload-status"></div>
+    </div>
+
+    <div id="section-nulos" class="chart-section" style="display:none;">
+      <h1>Valores Nulos</h1>
+      <canvas id="nulosChart" width="400" height="200"></canvas>
+    </div>
+
+    <div id="section-estadisticas" class="chart-section" style="display:none;">
+      <h1>Estadísticas Generales</h1>
+      <canvas id="estadisticasChart" width="400" height="200"></canvas>
+      <div id="estadisticas-table"></div>
+    </div>
+
+    <div id="section-otras" class="chart-section" style="display:none;">
+      <h1>Otras Gráficas</h1>
+      <canvas id="otrasChart" width="400" height="200"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Chart.js por CDN (rápido). Si prefieres npm luego lo cambiamos. -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- Entry de Vite -->
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
