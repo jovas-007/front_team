@@ -18,51 +18,65 @@
   </div>
 
   <div class="main-content">
+    <!-- INICIO -->
     <div id="section-inicio" class="chart-section">
       <h1>Bienvenido</h1>
       <p>Sube tu archivo CSV para analizarlo y visualizar gráficos en tiempo real.</p>
 
       <form id="upload-form" enctype="multipart/form-data">
-        <input type="file" name="csv_file" accept=".csv" required>
+        <input type="file" name="csv_file" accept=".csv" required />
         <button type="submit">Cargar CSV</button>
       </form>
       <div id="upload-status"></div>
     </div>
 
+    <!-- NULOS -->
     <div id="section-nulos" class="chart-section" style="display:none;">
-      <!-- NUEVO: selector Conteo / % -->
-  <div style="margin: .5rem 0;">
-    <label for="nulls-mode" style="margin-right:.5rem;">Mostrar:</label>
-    <select id="nulls-mode">
-      <option value="count" selected>Conteo</option>
-      <option value="percent">Porcentaje (%)</option>
-    </select>
-  </div>
-
-  <canvas id="nulosChart" width="400" height="200"></canvas>
-      
+      <h1>Valores Nulos</h1>
+      <div style="margin:.5rem 0;">
+        <label for="nulls-mode" style="margin-right:.5rem;">Mostrar:</label>
+        <select id="nulls-mode">
+          <option value="count" selected>Conteo</option>
+          <option value="percent">Porcentaje (%)</option>
+        </select>
+      </div>
       <canvas id="nulosChart" width="400" height="200"></canvas>
-
     </div>
 
+    <!-- ESTADÍSTICAS -->
     <div id="section-estadisticas" class="chart-section" style="display:none;">
       <h1>Estadísticas Generales</h1>
       <canvas id="estadisticasChart" width="400" height="200"></canvas>
       <div id="estadisticas-table"></div>
-
-      <h1>Valores Nulos</h1>
-
-
     </div>
 
+    <!-- OTRAS (DUPLICADOS POR COLUMNA) -->
     <div id="section-otras" class="chart-section" style="display:none;">
-      <h1>Otras Gráficas</h1>
+      <h1>Duplicados por columna</h1>
+      <div style="margin:.5rem 0;">
+        <label for="dupes-mode" style="margin-right:.5rem;">Mostrar:</label>
+        <select id="dupes-mode">
+          <option value="count" selected>Conteo</option>
+          <option value="percent">Porcentaje (%)</option>
+        </select>
+      </div>
       <canvas id="otrasChart" width="400" height="200"></canvas>
+      <div id="cleaning-suggestions" style="margin-top:1rem;"></div>
+      <!-- Debajo del div id="cleaning-suggestions" en la sección Otras -->
+<div id="cleaning-chart-wrap" style="margin-top:1rem;">
+  <h3>Columnas con alto porcentaje de duplicados (≥ 75%)</h3>
+  <canvas id="cleaningChart" height="220"></canvas>
+</div>
+
     </div>
   </div>
 </div>
 
-  <!-- ÚNICA entrada de Vite -->
-  <script type="module" src="/src/dashboard.js"></script>
+<!-- Chart.js por CDN (si ya lo importas por NPM puedes quitar esta línea) -->
+<!-- <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> -->
+<!-- ENTRY CORRECTO -->
+<script type="module" src="/src/dashboard.js"></script>
 </body>
+<script type="module" src="/src/dashboard.js"></script>
+
 </html>

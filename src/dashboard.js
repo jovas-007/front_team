@@ -2,8 +2,10 @@
 import { Chart } from "chart.js/auto";
 
 const API = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
+const DUP_THRESHOLD = 75; // <— umbral de duplicados por columna (en %)
 
-let charts = { nulos: null, stats: null, otras: null };
+// Mantén un solo Chart por canvas
+const charts = { nulos: null, stats: null, otras: null, cleaning: null };
 let lastPayload = null;
 const SECTIONS = ["inicio", "nulos", "estadisticas", "otras"];
 
@@ -24,6 +26,7 @@ function fmt(v) {
   return String(v);
 }
 
+/* ===================== Upload ===================== */
 async function uploadCSV(form) {
   const status = document.getElementById("upload-status");
   status.textContent = "Subiendo...";
@@ -36,40 +39,38 @@ async function uploadCSV(form) {
     status.textContent = "Archivo procesado ✅";
     selectSection("nulos");
   } catch (e) {
-    console.error(e);
+    console.error("[uploadCSV] error:", e);
     status.textContent = "Error al subir el CSV ❌";
   }
 }
 
-/* ---------- Helpers para Nulos ---------- */
+/* ===================== Nulos ===================== */
 function computeNullsSeries(payload, mode) {
-  const labels = payload.nulos.labels;
+  const n = payload?.nulos;
+  const rows = Number(payload?.rows ?? 0);
+  const labels = Array.isArray(n?.labels) ? n.labels : [];
+  const raw = Array.isArray(n?.values) ? n.values : [];
+
   if (mode === "percent") {
-    const total = Math.max(1, payload.rows); // evita división por 0
-    const values = payload.nulos.values.map(v => (v * 100) / total);
+    const total = Math.max(1, rows);
+    const values = raw.map(v => (Number(v) * 100) / total);
     return { labels, values, isPercent: true };
   }
-  // conteo
-  return { labels, values: payload.nulos.values.slice(), isPercent: false };
+  return { labels, values: raw.slice(), isPercent: false };
 }
 
 function renderNullsChart(payload) {
+  const ctx = document.getElementById("nulosChart");
+  if (!ctx) return;
+
   const select = document.getElementById("nulls-mode");
   const mode = select ? select.value : "count";
   const { labels, values, isPercent } = computeNullsSeries(payload, mode);
-  const ctx = document.getElementById("nulosChart");
-  if (!ctx) return;
 
   charts.nulos?.destroy();
   charts.nulos = new Chart(ctx, {
     type: "bar",
-    data: {
-      labels,
-      datasets: [{
-        label: isPercent ? "Nulos (%)" : "Nulos por columna",
-        data: values
-      }]
-    },
+    data: { labels, datasets: [{ label: isPercent ? "Nulos (%)" : "Nulos por columna", data: values }] },
     options: {
       responsive: true,
       plugins: { legend: { display: false }},
@@ -78,85 +79,210 @@ function renderNullsChart(payload) {
         y: {
           suggestedMin: 0,
           suggestedMax: isPercent ? 100 : undefined,
-          ticks: {
-            callback: (val) => isPercent ? `${val}%` : Number(val).toLocaleString()
-          }
+          ticks: { callback: v => isPercent ? `${v}%` : Number(v).toLocaleString() }
         }
       }
     }
   });
 }
 
-/* ---------- Render de pestañas ---------- */
-function renderCharts(payload, section = null) {
-  // --- Nulos
-  if (!section || section === "nulos") {
-    renderNullsChart(payload);
+/* ===================== Estadísticas ===================== */
+function renderStats(payload) {
+  const ctx = document.getElementById("estadisticasChart");
+  const host = document.getElementById("estadisticas-table");
+
+  const statsOk = Array.isArray(payload?.stats?.labels) && Array.isArray(payload?.stats?.values)
+                  && payload.stats.labels.length === payload.stats.values.length;
+
+  // Gráfica de medias
+  if (ctx) {
+    charts.stats?.destroy();
+    charts.stats = new Chart(ctx, {
+      type: "bar",
+      data: statsOk
+        ? { labels: payload.stats.labels, datasets: [{ label: "Media", data: payload.stats.values }] }
+        : { labels: [], datasets: [] },
+      options: { responsive: true, plugins: { legend: { display: false } } }
+    });
   }
 
-  // --- Estadísticas (medias) + tabla
-  if (!section || section === "estadisticas") {
-    const ctx = document.getElementById("estadisticasChart");
-    const hasNumerics = payload.stats && payload.stats.labels && payload.stats.labels.length;
-
-    if (ctx) {
-      charts.stats?.destroy();
-      charts.stats = new Chart(ctx, {
-        type: "bar",
-        data: hasNumerics ? {
-          labels: payload.stats.labels,
-          datasets: [{ label: "Media", data: payload.stats.values }]
-        } : { labels: [], datasets: [] },
-        options: { responsive: true }
-      });
+  // Tabla de métricas
+  if (host) {
+    if (!payload?.statsTable?.columns || !payload?.statsTable?.metrics || !payload?.statsTable?.values) {
+      host.innerHTML = `<p>No se encontraron columnas numéricas para estadísticas.</p>`;
+      return;
     }
-
-    const host = document.getElementById("estadisticas-table");
-    if (host) {
-      if (!hasNumerics) {
-        host.innerHTML = `<p>No se encontraron columnas numéricas para estadísticas.</p>`;
-      } else {
-        const { columns, metrics, values } = payload.statsTable; // filas=metrics, cols=columns
-        let html = `<div class="table-wrap"><table><thead><tr><th>Métrica</th>${columns.map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody>`;
-        for (let i=0; i<metrics.length; i++){
-          html += `<tr><td>${metrics[i]}</td>${values[i].map(v => `<td>${fmt(v)}</td>`).join("")}</tr>`;
-        }
-        html += `</tbody></table></div>`;
-        host.innerHTML = html;
-      }
+    const { columns, metrics, values } = payload.statsTable;
+    let html = `<div class="table-wrap"><table><thead><tr><th>Métrica</th>${columns.map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody>`;
+    for (let i = 0; i < metrics.length; i++) {
+      html += `<tr><td>${metrics[i]}</td>${values[i].map(v => `<td>${fmt(v)}</td>`).join("")}</tr>`;
     }
-  }
-
-  // --- Otras (duplicados)
-  if (!section || section === "otras") {
-    const ctx = document.getElementById("otrasChart");
-    if (ctx) {
-      charts.otras?.destroy();
-      charts.otras = new Chart(ctx, {
-        type: "pie",
-        data: {
-          labels: payload.otras.labels,
-          datasets: [{ label: "Duplicados", data: payload.otras.values }]
-        },
-        options: { responsive: true }
-      });
-    }
+    html += `</tbody></table></div>`;
+    host.innerHTML = html;
   }
 }
 
-/* ---------- Init ---------- */
+/* ===================== Duplicados (Otras) ===================== */
+function computeDupesSeries(payload, mode) {
+  const byCol = payload?.dupes_by_column;
+  const fallback = payload?.otras; // por compat
+  let labels = [];
+  let values = [];
+  let isPercent = (mode === "percent");
+
+  if (byCol?.labels?.length) {
+    labels = byCol.labels;
+    values = mode === "percent" ? (byCol.percent || []) : (byCol.counts || []);
+  } else if (fallback?.labels?.length) {
+    labels = fallback.labels;
+    values = fallback.values || [];
+    isPercent = false;
+  }
+  return { labels, values, isPercent };
+}
+
+function renderDupesChart(payload) {
+  const ctx = document.getElementById("otrasChart");
+  if (!ctx) return;
+
+  const select = document.getElementById("dupes-mode");
+  const mode = select ? select.value : "count";
+  const { labels, values, isPercent } = computeDupesSeries(payload, mode);
+
+  charts.otras?.destroy();
+  charts.otras = new Chart(ctx, {
+    type: "bar",
+    data: { labels, datasets: [{ label: isPercent ? "Duplicados (%)" : "Duplicados por columna", data: values }] },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false }},
+      scales: {
+        x: { ticks: { autoSkip: true }},
+        y: {
+          suggestedMin: 0,
+          suggestedMax: isPercent ? 100 : undefined,
+          ticks: { callback: v => isPercent ? `${v}%` : Number(v).toLocaleString() }
+        }
+      }
+    }
+  });
+}
+
+/* ===== Nuevo: gráfica que “referencia” las sugerencias (≥ 50% duplicados) ===== */
+function renderCleaningChart(payload) {
+  const canvas = document.getElementById("cleaningChart");
+  if (!canvas) return;
+
+  const labelsAll = payload?.dupes_by_column?.labels || [];
+  const percAll   = payload?.dupes_by_column?.percent || [];
+
+  // Filtra solo columnas con ≥ DUP_THRESHOLD %
+  const labels = [];
+  const values = [];
+  labelsAll.forEach((col, i) => {
+    const p = Number(percAll[i] ?? 0);
+    if (p >= DUP_THRESHOLD) { labels.push(col); values.push(p); }
+  });
+
+  charts.cleaning?.destroy();
+
+  if (labels.length) {
+    // Gráfica horizontal con % duplicados de las columnas “problemáticas”
+    charts.cleaning = new Chart(canvas, {
+      type: "bar",
+      data: { labels, datasets: [{ label: `% duplicados (≥ ${DUP_THRESHOLD}%)`, data: values }] },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false }},
+        indexAxis: "y",
+        scales: {
+          x: {
+            suggestedMin: 0,
+            suggestedMax: 100,
+            ticks: { callback: v => `${v}%` }
+          }
+        }
+      }
+    });
+  } else {
+    // Si no hay columnas ≥ umbral, muestra un doughnut informativo
+    charts.cleaning = new Chart(canvas, {
+      type: "doughnut",
+      data: {
+        labels: [`Sin columnas ≥ ${DUP_THRESHOLD}%`],
+        datasets: [{ data: [1] }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: true } }
+      }
+    });
+  }
+}
+
+function renderCleaningSuggestions(payload) {
+  const container = document.getElementById("cleaning-suggestions");
+  if (!container) return;
+
+  const suggestions = [];
+  if (payload?.dupes?.duplicates > 0) {
+    suggestions.push(`Hay ${fmt(payload.dupes.duplicates)} filas duplicadas en total. Considera eliminarlas (drop duplicates).`);
+  }
+
+  if (payload?.dupes_by_column?.labels?.length) {
+    payload.dupes_by_column.labels.forEach((col, i) => {
+      const p = Number(payload.dupes_by_column.percent?.[i] ?? 0);
+      if (p >= DUP_THRESHOLD) {
+        suggestions.push(
+          `La columna <strong>${col}</strong> tiene ≥ ${DUP_THRESHOLD}&nbsp;% de valores repetidos. Evalúa eliminarla o combinarla.`
+        );
+      }
+    });
+  }
+
+  if (!suggestions.length) {
+    suggestions.push("No se detectaron columnas con alta duplicación. Revisa outliers y consistencia de tipos.");
+  }
+
+  container.innerHTML = `<h3>Sugerencias de limpieza</h3><ul>${suggestions.map(s => `<li>${s}</li>`).join("")}</ul>`;
+}
+
+
+/* ===================== Render central ===================== */
+function renderCharts(payload, section = null) {
+  if (!section || section === "nulos") {
+    try { renderNullsChart(payload); } catch (e) { console.error("[render nulos]", e); }
+  }
+  if (!section || section === "estadisticas") {
+    try { renderStats(payload); } catch (e) { console.error("[render stats]", e); }
+  }
+  if (!section || section === "otras") {
+    try {
+      renderDupesChart(payload);
+      renderCleaningSuggestions(payload);
+      renderCleaningChart(payload);     // <—— NUEVO
+    } catch (e) { console.error("[render otras]", e); }
+  }
+}
+
+/* ===================== Init ===================== */
 function initNav() {
+  // Navegación
   document.querySelectorAll(".sidebar .nav-btn").forEach(btn => {
     btn.addEventListener("click", () => selectSection(btn.dataset.section));
   });
 
-  // Redibuja nulos cuando cambia el modo Conteo/% (si existe el selector)
-  const select = document.getElementById("nulls-mode");
-  if (select) {
-    select.addEventListener("change", () => {
-      if (lastPayload) renderNullsChart(lastPayload);
-    });
-  }
+  // Redibuja nulos cuando cambia Conteo/%
+  const nullSelect = document.getElementById("nulls-mode");
+  if (nullSelect) nullSelect.addEventListener("change", () => {
+    if (lastPayload) renderNullsChart(lastPayload);
+  });
+
+  // Redibuja duplicados cuando cambia Conteo/%
+  const dupSelect = document.getElementById("dupes-mode");
+  if (dupSelect) dupSelect.addEventListener("change", () => {
+    if (lastPayload) renderDupesChart(lastPayload);
+  });
 }
 
 function initUpload() {
@@ -174,4 +300,4 @@ export function initDashboard() {
   selectSection("inicio"); // vista inicial
 }
 
-document.addEventListener('DOMContentLoaded', initDashboard);
+document.addEventListener("DOMContentLoaded", initDashboard);

@@ -78,3 +78,10 @@ body {
         padding: 10px 0;
     }
 }
+select {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+}
+#cleaning-suggestions h3 { margin: 12px 0 6px; }
+#cleaning-suggestions ul { margin: 0; padding-left: 18px; }
